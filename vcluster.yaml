@@ -1,0 +1,14 @@
+sync:
+  fromHost:
+    ingressClasses:
+      enabled: true
+    nodes:
+      enabled: true
+  toHost:
+    ingresses:
+      enabled: true
+      
+controlPlane:
+  coredns:
+    enabled: true
+    embedded: true
