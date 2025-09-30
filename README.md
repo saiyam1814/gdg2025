@@ -5,20 +5,19 @@ You can fine the slides [here](https://docs.google.com/presentation/d/1qQUNuIBoc
 
 ### Google cloud GKE cluster creation 
 ```
-gcloud container clusters create gpu-cluster \
-    --zone us-central1 \
-    --release-channel "regular" \
-    --machine-type "n1-standard-4" \
-    --num-nodes 1
+gcloud container clusters create gpu-cluster \                     
+  --zone=us-central1-c \
+  --machine-type=e2-standard-4 \
+  --num-nodes=3                      
 ```
 ### Adding GPU node with time slicing
 ```
-gcloud container node-pools create gpu-node-pool \ 
-    --cluster=gpu-cluster \
-    --zone=us-central1 \
-    --machine-type=n1-standard-4 \
-    --accelerator=type=nvidia-tesla-t4,count=1,gpu-driver-version=LATEST,gpu-sharing-strategy=time-sharing,max-shared-clients-per-gpu=5 \
-    --num-nodes=1
+gcloud container node-pools create gpu-node-pool \
+  --cluster=gpu-cluster \
+  --zone=us-central1-c \        
+  --machine-type=n1-standard-4 \
+  --accelerator=type=nvidia-tesla-t4,count=1,gpu-sharing-strategy=time-sharing,max-shared-clients-per-gpu=5 \
+  --num-nodes=1
 ```
 ### vcluster creation 
 
@@ -46,8 +45,11 @@ kubectl exec -it <pod-name> -- ollama pull mistral
 
 ### Testing 
 ```
+ kubectl port-forward svc/ollama 8080:11434
+```
+```
 
-curl -s http://localhost:11435/api/chat \
+curl -s http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "mistral",
