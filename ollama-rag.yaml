@@ -1,0 +1,162 @@
+# -------------------------------------------------------
+# 1. Ollama Deployment (auto-pulls llama3 on startup)
+# -------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-gpu-sharing-strategy: "time-sharing"
+        cloud.google.com/gke-max-shared-clients-per-gpu: "5"
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        ports:
+        - containerPort: 11434
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            ollama pull llama3;
+            ollama serve
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: default
+spec:
+  selector:
+    app: ollama
+  ports:
+  - port: 11434
+    targetPort: 11434
+  type: ClusterIP
+
+---
+# -------------------------------------------------------
+# 2. RAG Document (ConfigMap)
+# -------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-docs
+  namespace: default
+data:
+  kubernetes.txt: |
+    Kubernetes is an open-source container orchestration platform that automates
+    the deployment, scaling, and management of containerized applications.
+    A Kubernetes Pod is the smallest deployable unit and can contain one or more
+    containers that share the same network and storage. Deployments manage Pods,
+    Services expose them to the network, and ConfigMaps store configuration data.
+
+---
+# -------------------------------------------------------
+# 3. Simple RAG Flask App (using /api/generate)
+# -------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simple-rag
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simple-rag
+  template:
+    metadata:
+      labels:
+        app: simple-rag
+    spec:
+      containers:
+      - name: rag
+        image: python:3.10-slim
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            pip install flask requests;
+            cat <<'EOF' > /app/app.py
+            from flask import Flask, request, jsonify
+            import requests, json
+
+            app = Flask(__name__)
+
+            DOC_PATH = "/app/docs/kubernetes.txt"
+            with open(DOC_PATH, "r") as f:
+                CONTEXT = f.read()
+
+            # NOTE: Ollama 0.12.5 uses /api/generate
+            OLLAMA_URL = "http://ollama.default.svc.cluster.local:11434/api/generate"
+
+            @app.route("/ask", methods=["POST"])
+            def ask():
+                q = request.json.get("question", "")
+                prompt = f"Context:\\n{CONTEXT}\\n\\nQuestion: {q}\\nAnswer:"
+
+                payload = {
+                    "model": "llama3",
+                    "prompt": prompt,
+                    "stream": True
+                }
+
+                answer = ""
+                try:
+                    with requests.post(OLLAMA_URL, json=payload, stream=True, timeout=180) as r:
+                        r.raise_for_status()
+                        for line in r.iter_lines():
+                            if not line:
+                                continue
+                            try:
+                                data = json.loads(line.decode("utf-8"))
+                                if "response" in data:
+                                    answer += data["response"]
+                            except json.JSONDecodeError:
+                                continue
+                except Exception as e:
+                    answer = f"Error contacting Ollama: {e}"
+
+                if not answer:
+                    answer = "No response from Ollama."
+
+                return jsonify({"answer": answer})
+
+            if __name__ == "__main__":
+                app.run(host="0.0.0.0", port=5000)
+            EOF
+            python /app/app.py
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: rag-docs
+          mountPath: /app/docs
+      volumes:
+      - name: rag-docs
+        configMap:
+          name: rag-docs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simple-rag-service
+  namespace: default
+spec:
+  selector:
+    app: simple-rag
+  ports:
+  - port: 5000
+    targetPort: 5000
+  type: ClusterIP
