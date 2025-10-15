@@ -59,3 +59,14 @@ curl -s http://localhost:8080/api/chat \
     ]
   }' | jq -r '.message.content'
 ```
+
+For RAG 
+```
+kubectl exec -it deploy/ollama -- ollama run llama3 "Hello"
+curl -s -X POST http://localhost:5000/ask \ 
+  -H "Content-Type: application/json" \
+  -d '{"question":"What is a Kubernetes pod?"}' | jq
+
+kubectl port-forward svc/simple-rag-service 5000:5000
+
+```
