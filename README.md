@@ -14,10 +14,11 @@ gcloud container clusters create gpu-cluster \
 ```
 gcloud container node-pools create gpu-node-pool \
   --cluster=gpu-cluster \
-  --zone=us-central1-c \        
+  --zone=us-central1-c \
   --machine-type=n1-standard-4 \
   --accelerator=type=nvidia-tesla-t4,count=1,gpu-sharing-strategy=time-sharing,max-shared-clients-per-gpu=5 \
   --num-nodes=1
+
 ```
 ### vcluster creation 
 
